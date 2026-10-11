@@ -88,12 +88,21 @@ class AppConfig: ObservableObject {
 
     // MARK: - Models
 
+    func setupDefaultModels() {
+        availableModels = [
+            ModelType(id: "gpt-4.1", displayName: "GPT-4.1", fullName: "GPT-4.1", iconName: "openai-icon", isMultimodal: true),
+            ModelType(id: "gpt-4.1-mini", displayName: "GPT-4.1 Mini", fullName: "GPT-4.1 Mini", iconName: "openai-icon", isMultimodal: true),
+            ModelType(id: "o4-mini", displayName: "o4-mini", fullName: "o4-mini", iconName: "openai-icon", isMultimodal: false)
+        ]
+    }
+
     private func loadCachedModels() {
         if let data = UserDefaults.standard.data(forKey: "cachedModels"),
-           let models = try? JSONDecoder().decode([ModelType].self, from: data) {
+           let models = try? JSONDecoder().decode([ModelType].self, from: data),
+           !models.isEmpty {
             self.availableModels = models
         } else {
-            self.availableModels = []
+            setupDefaultModels()
         }
     }
 
