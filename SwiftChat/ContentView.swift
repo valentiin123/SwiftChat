@@ -22,9 +22,7 @@ struct ContentView: View {
         ChatContainer()
             .environmentObject(viewModel)
             .onAppear {
-                if let saved = UserDefaults.standard.string(forKey: "apiKey"), !saved.isEmpty {
-                    AppConfig.shared.apiKey = saved
-                } else if needsAPIKey {
+                if needsAPIKey {
                     showAPIKeyPrompt = true
                 }
             }
@@ -36,7 +34,9 @@ struct ContentView: View {
                     let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { return }
                     AppConfig.shared.apiKey = trimmed
-                    UserDefaults.standard.set(trimmed, forKey: "apiKey")
+                    Task {
+                        await AppConfig.shared.fetchModels()
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
