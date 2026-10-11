@@ -45,7 +45,10 @@ class AppConfig: ObservableObject {
     // MARK: - Configuration
 
     /// Set your API key here or via environment
-    var apiKey: String = "YOUR_API_KEY"
+    var apiKey: String {
+        get { UserDefaults.standard.string(forKey: "apiKey") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "apiKey") }
+    }
 
     /// OpenAI-compatible API host (no scheme, no path)
     var apiHost: String = "ai.valentiin.com"
@@ -74,7 +77,7 @@ class AppConfig: ObservableObject {
     @Published private(set) var networkMonitor = NetworkMonitor()
 
     private init() {
-        setupDefaultModels()
+        loadCachedModels()
         loadLastSelectedModel()
         isInitialized = true
 
@@ -85,17 +88,25 @@ class AppConfig: ObservableObject {
 
     // MARK: - Models
 
-    /// Override this to change available models
-    private func setupDefaultModels() {
-        availableModels = [
-            ModelType(id: "gpt-4.1", displayName: "GPT-4.1", fullName: "GPT-4.1", iconName: "openai-icon", isMultimodal: true),
-            ModelType(id: "gpt-4.1-mini", displayName: "GPT-4.1 Mini", fullName: "GPT-4.1 Mini", iconName: "openai-icon", isMultimodal: true),
-            ModelType(id: "o4-mini", displayName: "o4-mini", fullName: "o4-mini", iconName: "openai-icon", isMultimodal: true),
-        ]
+    private func loadCachedModels() {
+        if let data = UserDefaults.standard.data(forKey: "cachedModels"),
+           let models = try? JSONDecoder().decode([ModelType].self, from: data) {
+            self.availableModels = models
+        } else {
+            self.availableModels = []
+        }
+    }
+
+    private func cacheModels(_ models: [ModelType]) {
+        if let data = try? JSONEncoder().encode(models) {
+            UserDefaults.standard.set(data, forKey: "cachedModels")
+        }
     }
 
     /// Fetches models from the API
-    private func fetchModels() async {
+    func fetchModels() async {
+        guard !apiKey.isEmpty, apiKey != "YOUR_API_KEY" else { return }
+
         let urlString = "https://\(apiHost)\(apiBasePath)/models"
         guard let url = URL(string: urlString) else { return }
 
@@ -130,10 +141,12 @@ class AppConfig: ObservableObject {
             }
 
             if !fetchedModels.isEmpty {
-                self.availableModels = fetchedModels.sorted { $0.id < $1.id }
+                let sorted = fetchedModels.sorted { $0.id < $1.id }
+                self.availableModels = sorted
+                self.cacheModels(sorted)
 
                 // If current model is not in the new list, update it.
-                if let current = self.currentModel, !fetchedModels.contains(where: { $0.id == current.id }) {
+                if let current = self.currentModel, !sorted.contains(where: { $0.id == current.id }) {
                     self.currentModel = self.availableModels.first
                 } else if self.currentModel == nil {
                     self.currentModel = self.availableModels.first
