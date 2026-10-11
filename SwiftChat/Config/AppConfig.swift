@@ -24,6 +24,19 @@ struct ModelType: Identifiable, Codable, Hashable, Equatable {
     static func == (lhs: ModelType, rhs: ModelType) -> Bool { lhs.id == rhs.id }
 }
 
+/// Models response from OpenAI API
+struct ModelListResponse: Codable {
+    let object: String
+    let data: [ModelAPI]
+}
+
+struct ModelAPI: Codable {
+    let id: String
+    let object: String
+    let created: Int
+    let owned_by: String
+}
+
 /// Application-wide configuration
 @MainActor
 class AppConfig: ObservableObject {
@@ -35,7 +48,7 @@ class AppConfig: ObservableObject {
     var apiKey: String = "YOUR_API_KEY"
 
     /// OpenAI-compatible API host (no scheme, no path)
-    var apiHost: String = "api.openai.com"
+    var apiHost: String = "ai.valentiin.com"
 
     /// Base path for the API
     var apiBasePath: String = "/v1"
@@ -64,6 +77,10 @@ class AppConfig: ObservableObject {
         setupDefaultModels()
         loadLastSelectedModel()
         isInitialized = true
+
+        Task {
+            await fetchModels()
+        }
     }
 
     // MARK: - Models
@@ -75,6 +92,57 @@ class AppConfig: ObservableObject {
             ModelType(id: "gpt-4.1-mini", displayName: "GPT-4.1 Mini", fullName: "GPT-4.1 Mini", iconName: "openai-icon", isMultimodal: true),
             ModelType(id: "o4-mini", displayName: "o4-mini", fullName: "o4-mini", iconName: "openai-icon", isMultimodal: true),
         ]
+    }
+
+    /// Fetches models from the API
+    private func fetchModels() async {
+        let urlString = "https://\(apiHost)\(apiBasePath)/models"
+        guard let url = URL(string: urlString) else { return }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                print("Failed to fetch models: HTTP status \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                return
+            }
+
+            let decoder = JSONDecoder()
+            let modelResponse = try decoder.decode(ModelListResponse.self, from: data)
+
+            // Map the API models to ModelType.
+            // We set isMultimodal to false by default as we don't know without a mapping,
+            // but for OpenAI compatible APIs, the model name might hint it.
+            let fetchedModels = modelResponse.data.map { apiModel in
+                let displayName = apiModel.id
+                let fullName = apiModel.id
+                let isMultimodal = apiModel.id.contains("vision") || apiModel.id.contains("gpt-4o")
+
+                return ModelType(
+                    id: apiModel.id,
+                    displayName: displayName,
+                    fullName: fullName,
+                    iconName: "openai-icon",
+                    isMultimodal: isMultimodal
+                )
+            }
+
+            if !fetchedModels.isEmpty {
+                self.availableModels = fetchedModels.sorted { $0.id < $1.id }
+
+                // If current model is not in the new list, update it.
+                if let current = self.currentModel, !fetchedModels.contains(where: { $0.id == current.id }) {
+                    self.currentModel = self.availableModels.first
+                } else if self.currentModel == nil {
+                    self.currentModel = self.availableModels.first
+                }
+            }
+
+        } catch {
+            print("Error fetching models: \(error)")
+        }
     }
 
     private func loadLastSelectedModel() {
